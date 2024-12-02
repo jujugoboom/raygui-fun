@@ -22,6 +22,8 @@ For a C++ project simply rename the file to .cpp and re-run the build script
 --
 --  3. This notice may not be removed or altered from any source distribution.
 
+I've changed the original file - jujugogoom 2024-12-01
+
 */
 
 #include "raylib.h"
