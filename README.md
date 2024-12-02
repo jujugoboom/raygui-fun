@@ -1,4 +1,4 @@
-# Raygui-fun
+# raygui-fun
 
 This is just a fun little repo for me to mess around with raygui. It started with wanting to mess around with BK-trees for other ideas, so it includes a full Damerau-Levenshtein distance calculation and functions to build a BK-tree off a provided word dictionary. Also allows serializing/deserializing tree to file.
 
