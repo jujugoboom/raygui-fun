@@ -436,6 +436,10 @@ void deSerialize(Node **root, FILE *fp, size_t *completed, bool *kill)
 	{
 		deSerialize(&(*root)->children[idx], fp, completed, kill);
 	}
+	if (*kill)
+	{
+		return;
+	}
 	fscanf(fp, "%s :::", &val);
 	if (strcmp(val, MARKER) != 0)
 	{
@@ -487,8 +491,8 @@ int main()
 {
 	// Initialization
 	//---------------------------------------------------------------------------------------
-	int screenWidth = 800;
-	int screenHeight = 450;
+	int screenWidth = 680;
+	int screenHeight = 420;
 
 	InitWindow(screenWidth, screenHeight, "Tester");
 
@@ -568,18 +572,18 @@ int main()
 
 		// raygui: controls drawing
 		//----------------------------------------------------------------------------------
-		if (GuiTextBox((Rectangle){8, 64, 120, 24}, TextBox001Text, 128, TextBox001EditMode))
+		if (GuiTextBox((Rectangle){8, 34, 120, 24}, TextBox001Text, 128, TextBox001EditMode))
 			TextBox001EditMode = !TextBox001EditMode;
-		if (GuiTextBox((Rectangle){152, 64, 120, 24}, TextBox002Text, 128, TextBox002EditMode))
+		if (GuiTextBox((Rectangle){152, 34, 120, 24}, TextBox002Text, 128, TextBox002EditMode))
 			TextBox002EditMode = !TextBox002EditMode;
-		GuiStatusBar((Rectangle){524, 64, 150, 24}, EditDistanceResultText);
-		GuiLabel((Rectangle){8, 40, 120, 24}, "Word 1");
-		GuiLabel((Rectangle){152, 40, 120, 24}, "Word 2");
-		if (GuiButton((Rectangle){304, 64, 195, 24}, "Calculate Edit Distance"))
+		GuiStatusBar((Rectangle){524, 34, 150, 24}, EditDistanceResultText);
+		GuiLabel((Rectangle){8, 10, 120, 24}, "Word 1");
+		GuiLabel((Rectangle){152, 10, 120, 24}, "Word 2");
+		if (GuiButton((Rectangle){304, 34, 195, 24}, "Calculate Edit Distance"))
 		{
 			sprintf(EditDistanceResultText, "Edit distance: %d", damerau_levenshtein_distance(TextBox001Text, TextBox002Text));
 		}
-		if (GuiButton((Rectangle){8, 136, 120, 24}, "Build BK-Tree"))
+		if (GuiButton((Rectangle){8, 106, 120, 24}, "Build BK-Tree"))
 		{
 			// Free old index if exists
 			freeNode(root);
@@ -595,13 +599,13 @@ int main()
 		if (root == NULL && !GuiGetState() != STATE_DISABLED)
 		{
 			GuiDisable();
-			GuiButton((Rectangle){152, 136, 120, 24}, "Save BK-Tree");
+			GuiButton((Rectangle){152, 106, 120, 24}, "Save BK-Tree");
 			GuiEnable();
 		}
-		else if (GuiButton((Rectangle){152, 136, 120, 24}, "Save BK-Tree"))
+		else if (GuiButton((Rectangle){152, 106, 120, 24}, "Save BK-Tree"))
 			write_tree(root);
 
-		if (GuiButton((Rectangle){304, 136, 120, 24}, "Load BK-Tree"))
+		if (GuiButton((Rectangle){304, 106, 120, 24}, "Load BK-Tree"))
 		{
 			freeNode(root);
 			root = NULL;
@@ -614,20 +618,20 @@ int main()
 			pthread_create(&LoadingThread, NULL, &load_tree, (void *)&args);
 			LoadingRunning = true;
 		}
-		if (GuiTextBox((Rectangle){8, 216, 120, 24}, TextBox008Text, 128, TextBox008EditMode))
+		if (GuiTextBox((Rectangle){8, 186, 120, 24}, TextBox008Text, 128, TextBox008EditMode))
 			TextBox008EditMode = !TextBox008EditMode;
-		if (GuiTextBox((Rectangle){152, 216, 120, 24}, TextBox009Text, 128, TextBox009EditMode))
+		if (GuiTextBox((Rectangle){152, 186, 120, 24}, TextBox009Text, 128, TextBox009EditMode))
 			TextBox009EditMode = !TextBox009EditMode;
-		GuiLabel((Rectangle){8, 192, 120, 24}, "Search Term");
-		GuiLabel((Rectangle){152, 192, 120, 24}, "Max edit distance");
+		GuiLabel((Rectangle){8, 162, 120, 24}, "Search Term");
+		GuiLabel((Rectangle){152, 162, 120, 24}, "Max edit distance");
 
 		if (root == NULL && GuiGetState() != STATE_DISABLED)
 		{
 			GuiDisable();
-			GuiButton((Rectangle){304, 216, 120, 24}, "Search");
+			GuiButton((Rectangle){304, 186, 120, 24}, "Search");
 			GuiEnable();
 		}
-		else if (GuiButton((Rectangle){304, 216, 120, 24}, "Search"))
+		else if (GuiButton((Rectangle){304, 186, 120, 24}, "Search"))
 		{
 			memset(SearchResultText, 0, strlen(SearchResultText));
 			int distance = atoi(TextBox009Text);
@@ -652,20 +656,20 @@ int main()
 		{
 			float progress = ((float)IndexingCompleted / (float)IndexingTotal);
 			GuiEnable();
-			GuiProgressBar((Rectangle){450, 136, 120, 24}, NULL, TextFormat("%i%%", (int)(progress * 100)), &progress, 0.0f, 1.0f);
+			GuiProgressBar((Rectangle){450, 106, 120, 24}, NULL, TextFormat("%i%%", (int)(progress * 100)), &progress, 0.0f, 1.0f);
 			GuiDisable();
 		}
 		if (LoadingRunning && LoadingTotal != 0)
 		{
 			float progress = ((float)LoadingCompleted / (float)LoadingTotal);
 			GuiEnable();
-			GuiProgressBar((Rectangle){450, 136, 120, 24}, NULL, TextFormat("%i%%", (int)(progress * 100)), &progress, 0.0f, 1.0f);
+			GuiProgressBar((Rectangle){450, 106, 120, 24}, NULL, TextFormat("%i%%", (int)(progress * 100)), &progress, 0.0f, 1.0f);
 			GuiDisable();
 		}
 		// GuiSetStyle(DEFAULT, TEXT_ALIGNMENT_VERTICAL, TEXT_ALIGN_TOP); // WARNING: Word-wrap does not work as expected in case of no-top alignment
 		// GuiSetStyle(DEFAULT, TEXT_WRAP_MODE, TEXT_WRAP_WORD);
-		GuiLabel((Rectangle){8, 250, 120, 24}, "Search Results");
-		GuiListView((Rectangle){8, 280, 416, 160}, SearchResultText, &SearchResultScrollIdx, &SearchResultScrollActive);
+		GuiLabel((Rectangle){8, 220, 120, 24}, "Search Results");
+		GuiListView((Rectangle){8, 250, 416, 160}, SearchResultText, &SearchResultScrollIdx, &SearchResultScrollActive);
 		// GuiSetStyle(DEFAULT, TEXT_WRAP_MODE, TEXT_WRAP_NONE);
 		// GuiSetStyle(DEFAULT, TEXT_ALIGNMENT_VERTICAL, TEXT_ALIGN_MIDDLE);
 
@@ -689,7 +693,7 @@ int main()
 	if (LoadingRunning)
 	{
 		KillLoading = true;
-		pthread_join(IndexingThread, NULL);
+		pthread_join(LoadingThread, NULL);
 	}
 	freeNode(root);
 	free(SearchResultText);
