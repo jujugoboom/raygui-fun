@@ -39,8 +39,7 @@ For a C++ project simply rename the file to .cpp and re-run the build script
 #include <sys/types.h>
 #include <pthread.h>
 
-#define MAX_CHAR 127  // Assuming the alphabet size is at most 256
-#define MAX_NODES 100 // Adjust this based on the expected number of nodes
+#define MAX_CHAR 127 // Assuming the alphabet size is at most 127
 #define MARKER ")))"
 // Node structure for the BK-Tree
 typedef struct Node

@@ -114,7 +114,7 @@ workspace (workspaceName)
 
     filter "configurations:Release"
         defines { "NDEBUG" }
-        optimize "On"
+        optimize "Full"
 
     filter { "platforms:x64" }
         architecture "x86_64"
@@ -134,6 +134,7 @@ workspace (workspaceName)
         kind "ConsoleApp"
         location "build_files/"
         targetdir "../bin/%{cfg.buildcfg}"
+        buildoptions {"-pedantic"}
 
         filter {"system:windows", "configurations:Release", "action:gmake*"}
             kind "WindowedApp"
