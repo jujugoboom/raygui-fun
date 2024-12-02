@@ -38,8 +38,9 @@ For a C++ project simply rename the file to .cpp and re-run the build script
 #include <sys/types.h>
 #include <pthread.h>
 
-#define MAX_CHAR 256  // Assuming the alphabet size is at most 256
+#define MAX_CHAR 127  // Assuming the alphabet size is at most 256
 #define MAX_NODES 100 // Adjust this based on the expected number of nodes
+#define MARKER ")))"
 // Node structure for the BK-Tree
 typedef struct Node
 {
@@ -66,7 +67,17 @@ typedef struct IndexingArguments
 	size_t *total;
 	size_t *completed;
 	bool *done;
+	bool *kill;
 } IndexingArguments;
+
+typedef struct LoadingArguments
+{
+	Node **root;
+	size_t *total;
+	size_t *completed;
+	bool *done;
+	bool *kill;
+} LoadingArguments;
 
 // Function to create a new node
 Node *
@@ -74,11 +85,25 @@ createNode(char *word)
 {
 	Node *newNode = (Node *)malloc(sizeof(Node));
 	newNode->word = strdup(word); // Allocate memory for the word
+	Node *children[MAX_CHAR] = {0};
+	memcpy(newNode->children, children, sizeof(children));
+	return newNode;
+}
+
+// Frees malloc'd data as well as all children, can be used to destruct whole tree
+void freeNode(Node *node)
+{
+	if (node == NULL)
+	{
+		return;
+	}
+	free(node->word);
 	for (int i = 0; i < MAX_CHAR; i++)
 	{
-		newNode->children[i] = NULL;
+		freeNode(node->children[i]);
+		node->children[i] = NULL;
 	}
-	return newNode;
+	free(node);
 }
 
 NodeStack *push_node(NodeStack *stack, Node *node)
@@ -352,7 +377,7 @@ void *create_tree(void *args)
 	first_word = trim(first_word);
 	*root = createNode(first_word);
 	char *to_insert = strtok(NULL, "\n");
-	while (to_insert)
+	while (to_insert && !*arguments->kill)
 	{
 		// printf("Inserting %s", to_insert);
 		*completed += strlen(to_insert) + 1;
@@ -363,6 +388,97 @@ void *create_tree(void *args)
 	pthread_exit(0);
 }
 
+void serialize(Node *root, FILE *fp)
+{
+	// Base case
+	if (root == NULL)
+	{
+		return;
+	}
+
+	// Else, store current node and recur for its children
+	fprintf(fp, "%s :::", root->word);
+	for (int i = 0; i < MAX_CHAR; i++)
+		if (root->children[i])
+		{
+			fprintf(fp, "%d --", i);
+			serialize(root->children[i], fp);
+		}
+
+	// Store marker at the end of children
+	fprintf(fp, "%s :::", MARKER);
+}
+
+void write_tree(Node *tree)
+{
+	FILE *file = fopen("bktree.bin", "wb");
+	if (file != NULL)
+	{
+		serialize(tree, file);
+		fclose(file);
+	}
+}
+
+void deSerialize(Node **root, FILE *fp, size_t *completed, bool *kill)
+{
+	// Read next item from file. If there are no more items or next
+	// item is marker, then return 1 to indicate same
+	char val[128];
+	if (!fscanf(fp, "%s :::", &val) || strcmp(val, MARKER) == 0)
+		return;
+
+	// Else create node with this item and recur for children
+	*root = createNode(val);
+	*completed = ftell(fp);
+	int idx;
+	while (fscanf(fp, "%d --", &idx) && !*kill)
+	{
+		deSerialize(&(*root)->children[idx], fp, completed, kill);
+	}
+	fscanf(fp, "%s :::", &val);
+	if (strcmp(val, MARKER) != 0)
+	{
+		exit(1);
+	}
+	// Finally return 0 for successful finish
+	return;
+}
+
+void print_tree(Node *root)
+{
+	printf("%s -- \n", root->word);
+	for (int i = 0; i < MAX_CHAR; i++)
+	{
+		if (root->children[i])
+		{
+			printf("%d. ", i);
+			print_tree(root->children[i]);
+		}
+	}
+}
+
+void read_tree(Node **root, size_t *total, size_t *completed, bool *kill)
+{
+	FILE *file = fopen("bktree.bin", "r");
+	if (file != NULL)
+	{
+		fseek(file, 0, SEEK_END);
+		long fsize = ftell(file);
+		fseek(file, 0, SEEK_SET); /* same as rewind(f); */
+		*total = fsize;
+		deSerialize(root, file, completed, kill);
+		fclose(file);
+		// print_tree(root);
+	}
+}
+
+void *load_tree(void *args)
+{
+	LoadingArguments *arguments = args;
+	read_tree(arguments->root, arguments->total, arguments->completed, arguments->kill);
+	*arguments->done = true;
+	pthread_exit(0);
+}
 //------------------------------------------------------------------------------------
 // Program main entry point
 //------------------------------------------------------------------------------------
@@ -387,11 +503,22 @@ int main()
 	char TextBox009Text[128] = "";
 	char SearchResultText[1024] = "";
 	char EditDistanceResultText[128] = "";
+
+	// Indexing thread info
 	size_t IndexingCompleted = 0;
 	size_t IndexingTotal = 0;
 	bool IndexingDone = false;
 	bool IndexingRunning = false;
+	bool KillIndexing = false;
 	pthread_t IndexingThread;
+
+	// Loading thread info
+	size_t LoadingCompleted = 0;
+	size_t LoadingTotal = 0;
+	bool LoadingDone = false;
+	bool LoadingRunning = false;
+	bool KillLoading = false;
+	pthread_t LoadingThread;
 
 	Node *root = NULL;
 	//----------------------------------------------------------------------------------
@@ -417,6 +544,20 @@ int main()
 		{
 			pthread_join(IndexingThread, NULL);
 			IndexingRunning = false;
+			IndexingCompleted = 0;
+			IndexingTotal = 0;
+			IndexingDone = false;
+			KillIndexing = false;
+		}
+
+		if (LoadingDone)
+		{
+			pthread_join(LoadingThread, NULL);
+			LoadingCompleted = 0;
+			LoadingTotal = 0;
+			LoadingDone = false;
+			LoadingRunning = false;
+			KillLoading = false;
 		}
 
 		// raygui: controls drawing
@@ -434,13 +575,32 @@ int main()
 		}
 		if (GuiButton((Rectangle){8, 136, 120, 24}, "Build BK-Tree"))
 		{
+			// Free old index if exists
+			freeNode(root);
 			struct IndexingArguments args;
 			args.root = &root;
 			args.completed = &IndexingCompleted;
 			args.total = &IndexingTotal;
 			args.done = &IndexingDone;
+			args.kill = &KillIndexing;
 			pthread_create(&IndexingThread, NULL, &create_tree, (void *)&args);
 			IndexingRunning = true;
+		}
+		if (GuiButton((Rectangle){152, 136, 120, 24}, "Save BK-Tree"))
+			write_tree(root);
+
+		if (GuiButton((Rectangle){304, 136, 120, 24}, "Load BK-Tree"))
+		{
+			freeNode(root);
+			root = NULL;
+			struct LoadingArguments args;
+			args.root = &root;
+			args.completed = &LoadingCompleted;
+			args.total = &LoadingTotal;
+			args.done = &LoadingDone;
+			args.kill = &KillLoading;
+			pthread_create(&LoadingThread, NULL, &load_tree, (void *)&args);
+			LoadingRunning = true;
 		}
 		if (GuiTextBox((Rectangle){8, 216, 120, 24}, TextBox008Text, 128, TextBox008EditMode))
 			TextBox008EditMode = !TextBox008EditMode;
@@ -452,7 +612,7 @@ int main()
 		{
 			memset(SearchResultText, 0, strlen(SearchResultText));
 
-			CharStack *search_result = search(root, TextBox008Text, 2, 20);
+			CharStack *search_result = search(root, TextBox008Text, 1, 20);
 			while (search_result != NULL)
 			{
 				char *result = pop_char(&search_result);
@@ -468,13 +628,20 @@ int main()
 			GuiProgressBar((Rectangle){450, 216, 120, 24}, NULL, TextFormat("%i%%", (int)(progress * 100)), &progress, 0.0f, 1.0f);
 			GuiDisable();
 		}
+		if (LoadingRunning && LoadingTotal != 0)
+		{
+			float progress = ((float)LoadingCompleted / (float)LoadingTotal);
+			GuiEnable();
+			GuiProgressBar((Rectangle){450, 216, 120, 24}, NULL, TextFormat("%i%%", (int)(progress * 100)), &progress, 0.0f, 1.0f);
+			GuiDisable();
+		}
 		GuiSetStyle(DEFAULT, TEXT_ALIGNMENT_VERTICAL, TEXT_ALIGN_TOP); // WARNING: Word-wrap does not work as expected in case of no-top alignment
 		GuiSetStyle(DEFAULT, TEXT_WRAP_MODE, TEXT_WRAP_WORD);
 		GuiTextBox((Rectangle){8, 272, 416, 160}, SearchResultText, 1024, false);
 		GuiSetStyle(DEFAULT, TEXT_WRAP_MODE, TEXT_WRAP_NONE);
 		GuiSetStyle(DEFAULT, TEXT_ALIGNMENT_VERTICAL, TEXT_ALIGN_MIDDLE);
 
-		if (IndexingRunning)
+		if (IndexingRunning || LoadingRunning)
 			GuiDisable();
 		else
 			GuiEnable();
@@ -486,6 +653,17 @@ int main()
 
 	// De-Initialization
 	//--------------------------------------------------------------------------------------
+	if (IndexingRunning)
+	{
+		KillIndexing = true;
+		pthread_join(IndexingThread, NULL);
+	}
+	if (LoadingRunning)
+	{
+		KillLoading = true;
+		pthread_join(IndexingThread, NULL);
+	}
+	freeNode(root);
 	CloseWindow(); // Close window and OpenGL context
 	//--------------------------------------------------------------------------------------
 
