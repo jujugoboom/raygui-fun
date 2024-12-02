@@ -40,6 +40,7 @@ I've changed the original file - jujugogoom 2024-12-01
 #include <ctype.h>
 #include <sys/types.h>
 #include <pthread.h>
+#include <limits.h>
 
 #define MAX_CHAR 127 // Assuming the alphabet size is at most 127
 #define MARKER ")))"
@@ -225,10 +226,10 @@ int damerau_levenshtein_distance(const char *a, const char *b)
 			if (cost == 0)
 				db = j;
 			d[i + 1][j + 1] =
-				min4(d[i][j] + cost,						   // Substitution
-					 d[i + 1][j] + 1,						   // Insertion
-					 d[i][j + 1] + 1,						   // Deletion
-					 d[k][l] + (i - k - 1) + 1 + (j - l - 1)); // Transposition
+					min4(d[i][j] + cost,													 // Substitution
+							 d[i + 1][j] + 1,													 // Insertion
+							 d[i][j + 1] + 1,													 // Deletion
+							 d[k][l] + (i - k - 1) + 1 + (j - l - 1)); // Transposition
 		}
 		da[a[i - 1]] = i;
 	}
@@ -426,7 +427,7 @@ void deSerialize(Node **root, FILE *fp, size_t *completed, bool *kill)
 	// Read next item from file. If there are no more items or next
 	// item is marker, then return 1 to indicate same
 	char val[128];
-	if (!fscanf(fp, "%s :::", &val) || strcmp(val, MARKER) == 0)
+	if (!fscanf(fp, "%s :::", (char *)&val) || strcmp(val, MARKER) == 0)
 		return;
 
 	// Else create node with this item and recur for children
@@ -441,7 +442,7 @@ void deSerialize(Node **root, FILE *fp, size_t *completed, bool *kill)
 	{
 		return;
 	}
-	fscanf(fp, "%s :::", &val);
+	fscanf(fp, "%s :::", (char *)&val);
 	if (strcmp(val, MARKER) != 0)
 	{
 		exit(1);
