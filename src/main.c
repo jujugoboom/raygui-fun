@@ -625,14 +625,14 @@ int main()
 		{
 			float progress = ((float)IndexingCompleted / (float)IndexingTotal);
 			GuiEnable();
-			GuiProgressBar((Rectangle){450, 216, 120, 24}, NULL, TextFormat("%i%%", (int)(progress * 100)), &progress, 0.0f, 1.0f);
+			GuiProgressBar((Rectangle){450, 136, 120, 24}, NULL, TextFormat("%i%%", (int)(progress * 100)), &progress, 0.0f, 1.0f);
 			GuiDisable();
 		}
 		if (LoadingRunning && LoadingTotal != 0)
 		{
 			float progress = ((float)LoadingCompleted / (float)LoadingTotal);
 			GuiEnable();
-			GuiProgressBar((Rectangle){450, 216, 120, 24}, NULL, TextFormat("%i%%", (int)(progress * 100)), &progress, 0.0f, 1.0f);
+			GuiProgressBar((Rectangle){450, 136, 120, 24}, NULL, TextFormat("%i%%", (int)(progress * 100)), &progress, 0.0f, 1.0f);
 			GuiDisable();
 		}
 		GuiSetStyle(DEFAULT, TEXT_ALIGNMENT_VERTICAL, TEXT_ALIGN_TOP); // WARNING: Word-wrap does not work as expected in case of no-top alignment
