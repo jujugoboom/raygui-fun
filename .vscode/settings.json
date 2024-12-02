@@ -7,5 +7,10 @@
 		"**/.DS_Store": true,
 		"**/*.o": true,
 		"**/*.exe": true,
+	},
+	"makefile.configureOnOpen": true,
+	"files.associations": {
+		"xutility": "c",
+		"posix_thread.h": "c"
 	}
 }
