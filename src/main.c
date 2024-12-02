@@ -166,11 +166,7 @@ int damerau_levenshtein_distance(const char *a, const char *b)
 	int len_a = strlen(a);
 	int len_b = strlen(b);
 	// Create da array to store the last occurrence of each character
-	int *da = malloc(MAX_CHAR * sizeof(int));
-	for (int i = 0; i < MAX_CHAR; i++)
-	{
-		da[i] = 0;
-	}
+	int *da = calloc(sizeof(int), MAX_CHAR);
 	// Create d array (with extra rows and columns for initialization)
 	int **d = malloc((len_a + 2) * sizeof(int *));
 	for (int i = 0; i <= len_a + 1; i++)
