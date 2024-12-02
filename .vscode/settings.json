@@ -11,6 +11,7 @@
 	"makefile.configureOnOpen": true,
 	"files.associations": {
 		"xutility": "c",
-		"posix_thread.h": "c"
+		"posix_thread.h": "c",
+		"algorithm": "c"
 	}
 }

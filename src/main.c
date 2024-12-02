@@ -28,6 +28,7 @@ For a C++ project simply rename the file to .cpp and re-run the build script
 
 #define RAYGUI_IMPLEMENTATION
 #include "raygui.h"
+#include "style_jungle.h"
 
 #include "resource_dir.h" // utility header for SearchAndSetResourceDir
 
@@ -501,8 +502,12 @@ int main()
 	char TextBox008Text[128] = "";
 	bool TextBox009EditMode = false;
 	char TextBox009Text[128] = "";
-	char SearchResultText[1024] = "";
+	int CurrMaxResultSize = 256;
+	char *SearchResultText = calloc(sizeof(char), CurrMaxResultSize);
 	char EditDistanceResultText[128] = "";
+
+	int SearchResultScrollIdx = 0;
+	int SearchResultScrollActive = 0;
 
 	// Indexing thread info
 	size_t IndexingCompleted = 0;
@@ -524,6 +529,7 @@ int main()
 	//----------------------------------------------------------------------------------
 
 	SetTargetFPS(60);
+	GuiLoadStyleJungle();
 	//--------------------------------------------------------------------------------------
 
 	// Main game loop
@@ -566,10 +572,10 @@ int main()
 			TextBox001EditMode = !TextBox001EditMode;
 		if (GuiTextBox((Rectangle){152, 64, 120, 24}, TextBox002Text, 128, TextBox002EditMode))
 			TextBox002EditMode = !TextBox002EditMode;
-		GuiTextBox((Rectangle){478, 64, 120, 24}, EditDistanceResultText, 128, false);
+		GuiStatusBar((Rectangle){524, 64, 150, 24}, EditDistanceResultText);
 		GuiLabel((Rectangle){8, 40, 120, 24}, "Word 1");
 		GuiLabel((Rectangle){152, 40, 120, 24}, "Word 2");
-		if (GuiButton((Rectangle){304, 64, 150, 24}, "Calculate Edit Distance"))
+		if (GuiButton((Rectangle){304, 64, 195, 24}, "Calculate Edit Distance"))
 		{
 			sprintf(EditDistanceResultText, "Edit distance: %d", damerau_levenshtein_distance(TextBox001Text, TextBox002Text));
 		}
@@ -586,7 +592,13 @@ int main()
 			pthread_create(&IndexingThread, NULL, &create_tree, (void *)&args);
 			IndexingRunning = true;
 		}
-		if (GuiButton((Rectangle){152, 136, 120, 24}, "Save BK-Tree"))
+		if (root == NULL && !GuiGetState() != STATE_DISABLED)
+		{
+			GuiDisable();
+			GuiButton((Rectangle){152, 136, 120, 24}, "Save BK-Tree");
+			GuiEnable();
+		}
+		else if (GuiButton((Rectangle){152, 136, 120, 24}, "Save BK-Tree"))
 			write_tree(root);
 
 		if (GuiButton((Rectangle){304, 136, 120, 24}, "Load BK-Tree"))
@@ -608,17 +620,32 @@ int main()
 			TextBox009EditMode = !TextBox009EditMode;
 		GuiLabel((Rectangle){8, 192, 120, 24}, "Search Term");
 		GuiLabel((Rectangle){152, 192, 120, 24}, "Max edit distance");
-		if (GuiButton((Rectangle){304, 216, 120, 24}, "Search"))
+
+		if (root == NULL && GuiGetState() != STATE_DISABLED)
+		{
+			GuiDisable();
+			GuiButton((Rectangle){304, 216, 120, 24}, "Search");
+			GuiEnable();
+		}
+		else if (GuiButton((Rectangle){304, 216, 120, 24}, "Search"))
 		{
 			memset(SearchResultText, 0, strlen(SearchResultText));
-
-			CharStack *search_result = search(root, TextBox008Text, 1, 20);
+			int distance = atoi(TextBox009Text);
+			if (!distance)
+			{
+				distance = 2;
+			}
+			CharStack *search_result = search(root, TextBox008Text, distance, INT_MAX);
+			int result_length = 0;
 			while (search_result != NULL)
 			{
 				char *result = pop_char(&search_result);
-				char *withnl = malloc(sizeof(char) * (strlen(result) + 4));
-				sprintf(withnl, "%s -- ", result);
-				strcat(SearchResultText, withnl);
+				if (result_length + strlen(result) > CurrMaxResultSize)
+				{
+					CurrMaxResultSize *= 2;
+					SearchResultText = realloc(SearchResultText, CurrMaxResultSize);
+				}
+				result_length += snprintf(SearchResultText + result_length, CurrMaxResultSize - result_length, "%s\n", result);
 			}
 		}
 		if (IndexingRunning && IndexingTotal != 0)
@@ -635,11 +662,12 @@ int main()
 			GuiProgressBar((Rectangle){450, 136, 120, 24}, NULL, TextFormat("%i%%", (int)(progress * 100)), &progress, 0.0f, 1.0f);
 			GuiDisable();
 		}
-		GuiSetStyle(DEFAULT, TEXT_ALIGNMENT_VERTICAL, TEXT_ALIGN_TOP); // WARNING: Word-wrap does not work as expected in case of no-top alignment
-		GuiSetStyle(DEFAULT, TEXT_WRAP_MODE, TEXT_WRAP_WORD);
-		GuiTextBox((Rectangle){8, 272, 416, 160}, SearchResultText, 1024, false);
-		GuiSetStyle(DEFAULT, TEXT_WRAP_MODE, TEXT_WRAP_NONE);
-		GuiSetStyle(DEFAULT, TEXT_ALIGNMENT_VERTICAL, TEXT_ALIGN_MIDDLE);
+		// GuiSetStyle(DEFAULT, TEXT_ALIGNMENT_VERTICAL, TEXT_ALIGN_TOP); // WARNING: Word-wrap does not work as expected in case of no-top alignment
+		// GuiSetStyle(DEFAULT, TEXT_WRAP_MODE, TEXT_WRAP_WORD);
+		GuiLabel((Rectangle){8, 250, 120, 24}, "Search Results");
+		GuiListView((Rectangle){8, 280, 416, 160}, SearchResultText, &SearchResultScrollIdx, &SearchResultScrollActive);
+		// GuiSetStyle(DEFAULT, TEXT_WRAP_MODE, TEXT_WRAP_NONE);
+		// GuiSetStyle(DEFAULT, TEXT_ALIGNMENT_VERTICAL, TEXT_ALIGN_MIDDLE);
 
 		if (IndexingRunning || LoadingRunning)
 			GuiDisable();
@@ -664,6 +692,7 @@ int main()
 		pthread_join(IndexingThread, NULL);
 	}
 	freeNode(root);
+	free(SearchResultText);
 	CloseWindow(); // Close window and OpenGL context
 	//--------------------------------------------------------------------------------------
 
