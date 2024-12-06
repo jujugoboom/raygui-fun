@@ -40,7 +40,7 @@ I've changed the original file - jujugogoom 2024-12-01
 #include <ctype.h>
 #include <sys/types.h>
 #include <pthread.h>
-#include <limits.h>
+#include <math.h>
 
 #define MAX_CHAR 127 // Assuming the alphabet size is at most 127
 #define MARKER ")))"
@@ -81,6 +81,15 @@ typedef struct LoadingArguments
 	bool *done;
 	bool *kill;
 } LoadingArguments;
+
+typedef struct ImageIndexArguments
+{
+	Node **root;
+	size_t *total;
+	size_t *completed;
+	bool *done;
+	bool *kill;
+} ImageIndexArguments;
 
 // Function to create a new node
 Node *
@@ -226,10 +235,10 @@ int damerau_levenshtein_distance(const char *a, const char *b)
 			if (cost == 0)
 				db = j;
 			d[i + 1][j + 1] =
-					min4(d[i][j] + cost,													 // Substitution
-							 d[i + 1][j] + 1,													 // Insertion
-							 d[i][j + 1] + 1,													 // Deletion
-							 d[k][l] + (i - k - 1) + 1 + (j - l - 1)); // Transposition
+				min4(d[i][j] + cost,						   // Substitution
+					 d[i + 1][j] + 1,						   // Insertion
+					 d[i][j + 1] + 1,						   // Deletion
+					 d[k][l] + (i - k - 1) + 1 + (j - l - 1)); // Transposition
 		}
 		da[a[i - 1]] = i;
 	}
@@ -427,7 +436,7 @@ void deSerialize(Node **root, FILE *fp, size_t *completed, bool *kill)
 	// Read next item from file. If there are no more items or next
 	// item is marker, then return 1 to indicate same
 	char val[128];
-	if (!fscanf(fp, "%s :::", (char *)&val) || strcmp(val, MARKER) == 0)
+	if (!fscanf(fp, "%s :::", &val) || strcmp(val, MARKER) == 0)
 		return;
 
 	// Else create node with this item and recur for children
@@ -442,7 +451,7 @@ void deSerialize(Node **root, FILE *fp, size_t *completed, bool *kill)
 	{
 		return;
 	}
-	fscanf(fp, "%s :::", (char *)&val);
+	fscanf(fp, "%s :::", &val);
 	if (strcmp(val, MARKER) != 0)
 	{
 		exit(1);
@@ -485,6 +494,107 @@ void *load_tree(void *args)
 	read_tree(arguments->root, arguments->total, arguments->completed, arguments->kill);
 	*arguments->done = true;
 	pthread_exit(0);
+}
+
+void *dctTransform(Image image, char *output)
+{
+	int n = 32, m = 32;
+	Image copy = ImageCopy(image);
+	ImageResize(&copy, n, m);
+	ImageColorGrayscale(&copy);
+	unsigned char *matrix = copy.data;
+	int i, j, k, l;
+
+	// dct will store the discrete cosine transform
+	float dct[n][m];
+
+	float ci, cj, dct1, sum;
+
+	for (i = 0; i < m; i++)
+	{
+		for (j = 0; j < n; j++)
+		{
+
+			// ci and cj depends on frequency as well as
+			// number of row and columns of specified matrix
+			if (i == 0)
+				ci = 1. / sqrt(m);
+			else
+				ci = sqrt(2. / m);
+			if (j == 0)
+				cj = 1. / sqrt(n);
+			else
+				cj = sqrt(2. / n);
+
+			// sum will temporarily store the sum of
+			// cosine signals
+			sum = 0;
+			for (k = 0; k < m; k++)
+			{
+				for (l = 0; l < n; l++)
+				{
+					dct1 = (int)matrix[(k * 32) + l] *
+						   cos((PI / m) * (k + .5) * i) *
+						   cos((PI / n) * (l + .5) * j);
+					sum += dct1;
+				}
+			}
+			dct[i][j] = ci * cj * sum;
+		}
+	}
+
+	float reducedDct[8][8];
+	float lowFreqTotal = 0.f;
+	// Reduce dct to 8x8 by taking top left to get lowest frequencies
+	for (i = 0; i < 8; i++)
+	{
+		for (j = 0; j < 8; j++)
+		{
+			reducedDct[i][j] = dct[i][j];
+
+			if (i == 0 && j == 0)
+				continue;
+			lowFreqTotal += dct[i][j];
+		}
+	}
+
+	float avg = lowFreqTotal / 63;
+	unsigned long long int result = 0;
+	for (i = 0; i < 8; i++)
+	{
+		for (j = 0; j < 8; j++)
+		{
+			if (reducedDct[i][j] > avg)
+				result |= 1;
+			result = result << 1;
+		}
+	}
+
+	char resBuf[16];
+	snprintf(output, 16, "%llx", result);
+}
+
+void index_images()
+{
+	// ImageIndexArguments *arguments = args;
+	if (!DirectoryExists("images"))
+	{
+		printf("No image directory\n");
+		// *arguments->done = true;
+		// pthread_exit(0);
+	}
+	FilePathList imageDirFiles = LoadDirectoryFilesEx("images", ".png", false);
+	for (int i = 0; i < imageDirFiles.count; i++)
+	{
+		Image image = LoadImage(imageDirFiles.paths[i]);
+		char hash[16];
+		dctTransform(image, hash);
+		printf("Got hash %s for image %s\n", hash, imageDirFiles.paths[i]);
+		Image image2 = LoadImage(imageDirFiles.paths[i]);
+		ImageBlurGaussian(&image2, 50);
+		dctTransform(image2, hash);
+		printf("Got hash %s for image %s\n", hash, imageDirFiles.paths[i]);
+	}
 }
 //------------------------------------------------------------------------------------
 // Program main entry point
@@ -674,6 +784,11 @@ int main()
 		GuiListView((Rectangle){8, 250, 416, 160}, SearchResultText, &SearchResultScrollIdx, &SearchResultScrollActive);
 		// GuiSetStyle(DEFAULT, TEXT_WRAP_MODE, TEXT_WRAP_NONE);
 		// GuiSetStyle(DEFAULT, TEXT_ALIGNMENT_VERTICAL, TEXT_ALIGN_MIDDLE);
+
+		if (GuiButton((Rectangle){350, 186, 120, 24}, "Image test"))
+		{
+			index_images();
+		}
 
 		if (IndexingRunning || LoadingRunning)
 			GuiDisable();
