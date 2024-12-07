@@ -41,6 +41,7 @@ I've changed the original file - jujugogoom 2024-12-01
 #include <sys/types.h>
 #include <pthread.h>
 #include <math.h>
+#include <limits.h>
 
 #define MAX_CHAR 127 // Assuming the alphabet size is at most 127
 #define MARKER ")))"
@@ -436,7 +437,7 @@ void deSerialize(Node **root, FILE *fp, size_t *completed, bool *kill)
 	// Read next item from file. If there are no more items or next
 	// item is marker, then return 1 to indicate same
 	char val[128];
-	if (!fscanf(fp, "%s :::", &val) || strcmp(val, MARKER) == 0)
+	if (!fscanf(fp, "%s :::", (char *)&val) || strcmp(val, MARKER) == 0)
 		return;
 
 	// Else create node with this item and recur for children
@@ -451,7 +452,7 @@ void deSerialize(Node **root, FILE *fp, size_t *completed, bool *kill)
 	{
 		return;
 	}
-	fscanf(fp, "%s :::", &val);
+	fscanf(fp, "%s :::", (char *)&val);
 	if (strcmp(val, MARKER) != 0)
 	{
 		exit(1);
@@ -496,7 +497,7 @@ void *load_tree(void *args)
 	pthread_exit(0);
 }
 
-void *dctTransform(Image image, char *output)
+void dctTransform(Image image, char *output)
 {
 	int n = 32, m = 32;
 	Image copy = ImageCopy(image);
@@ -574,7 +575,7 @@ void *dctTransform(Image image, char *output)
 	snprintf(output, 16, "%llx", result);
 }
 
-void index_images()
+void index_images(void)
 {
 	// ImageIndexArguments *arguments = args;
 	if (!DirectoryExists("images"))
@@ -599,7 +600,7 @@ void index_images()
 //------------------------------------------------------------------------------------
 // Program main entry point
 //------------------------------------------------------------------------------------
-int main()
+int main(void)
 {
 	// Initialization
 	//---------------------------------------------------------------------------------------
@@ -708,7 +709,7 @@ int main()
 			pthread_create(&IndexingThread, NULL, &create_tree, (void *)&args);
 			IndexingRunning = true;
 		}
-		if (root == NULL && !GuiGetState() != STATE_DISABLED)
+		if (root == NULL && GuiGetState() != STATE_DISABLED)
 		{
 			GuiDisable();
 			GuiButton((Rectangle){152, 106, 120, 24}, "Save BK-Tree");
@@ -785,7 +786,7 @@ int main()
 		// GuiSetStyle(DEFAULT, TEXT_WRAP_MODE, TEXT_WRAP_NONE);
 		// GuiSetStyle(DEFAULT, TEXT_ALIGNMENT_VERTICAL, TEXT_ALIGN_MIDDLE);
 
-		if (GuiButton((Rectangle){350, 186, 120, 24}, "Image test"))
+		if (GuiButton((Rectangle){450, 186, 120, 24}, "Image test"))
 		{
 			index_images();
 		}

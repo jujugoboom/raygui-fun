@@ -67,6 +67,7 @@ function platform_defines()
         defines{"GRAPHICS_API_OPENGL_ES2"}
 
     filter {"system:macosx"}
+        toolset ("gcc")
         disablewarnings {"deprecated-declarations"}
 
     filter {"system:linux"}
@@ -216,6 +217,9 @@ workspace (workspaceName)
         files {raylib_dir .. "/src/*.h", raylib_dir .. "/src/*.c"}
 
         removefiles {raylib_dir .. "/src/rcore_*.c"}
+
+        filter "system:macosx"
+            buildoptions {"-pthread"}
 
         filter { "system:macosx", "files:" .. raylib_dir .. "/src/rglfw.c" }
             compileas "Objective-C"
