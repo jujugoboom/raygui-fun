@@ -43,6 +43,12 @@ I've changed the original file - jujugogoom 2024-12-01
 #include <math.h>
 #include <limits.h>
 
+#if defined(_WIN32)
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
+
 #define MAX_CHAR 127 // Assuming the alphabet size is at most 127
 #define MARKER ")))"
 // Node structure for the BK-Tree
@@ -497,7 +503,7 @@ void *load_tree(void *args)
 	pthread_exit(0);
 }
 
-void dctTransform(Image image, char *output)
+unsigned long long int dctTransform(Image image)
 {
 	int n = 32, m = 32;
 	Image copy = ImageCopy(image);
@@ -572,7 +578,7 @@ void dctTransform(Image image, char *output)
 	}
 
 	char resBuf[16];
-	snprintf(output, 16, "%llx", result);
+	return result;
 }
 
 void index_images(void)
@@ -588,13 +594,13 @@ void index_images(void)
 	for (int i = 0; i < imageDirFiles.count; i++)
 	{
 		Image image = LoadImage(imageDirFiles.paths[i]);
-		char hash[16];
-		dctTransform(image, hash);
-		printf("Got hash %s for image %s\n", hash, imageDirFiles.paths[i]);
+		unsigned long long hash = dctTransform(image);
+		printf("Got hash %llx for image %s\n", hash, imageDirFiles.paths[i]);
 		Image image2 = LoadImage(imageDirFiles.paths[i]);
-		ImageBlurGaussian(&image2, 50);
-		dctTransform(image2, hash);
-		printf("Got hash %s for image %s\n", hash, imageDirFiles.paths[i]);
+		ImageBlurGaussian(&image2, 5);
+		unsigned long long hash1 = dctTransform(image2);
+		printf("Got hash %llx for image %s\n", hash1, imageDirFiles.paths[i]);
+		printf("Hamming distance %d\n", __builtin_popcount(hash ^ hash1));
 	}
 }
 //------------------------------------------------------------------------------------
