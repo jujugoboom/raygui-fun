@@ -27,7 +27,8 @@
             },
             "osx": {
               "program": "${workspaceFolder}/bin/Debug/${workspaceFolderBasename}",
-              "MIMode": "lldb"
+              "MIMode": "lldb",
+              "targetArchitecture": "arm64"
             },
             "linux": {
               "program": "${workspaceFolder}/bin/Debug/${workspaceFolderBasename}",
@@ -52,7 +53,8 @@
             },
             "osx": {
               "program": "${workspaceFolder}/bin/Release/${workspaceFolderBasename}",
-              "MIMode": "lldb"
+              "MIMode": "lldb",
+              "targetArchitecture": "arm64"
             },
             "linux": {
               "program": "${workspaceFolder}/bin/Release/${workspaceFolderBasename}",

@@ -750,20 +750,21 @@ void *index_images(void *args)
 		firstImage = LoadImage(imageDirFiles.paths[i]);
 		if (IsImageValid(firstImage))
 		{
-			*root = createImageNode(firstImage, imageDirFiles.paths[0]);
+			*root = createImageNode(firstImage, imageDirFiles.paths[i]);
 			UnloadImage(firstImage);
 			break;
 		}
 		UnloadImage(firstImage);
 	}
-	*arguments->total = imageDirFiles.count;
-	if (root == NULL)
+	*(arguments->total) = imageDirFiles.count;
+	if (*root == NULL)
 	{
 		printf("No valid images found\n");
 		*arguments->done = true;
 		UnloadDirectoryFiles(imageDirFiles);
 		pthread_exit(0);
 	}
+	printf("checked root\n");
 	for (; i < imageDirFiles.count && !*arguments->kill; i++)
 	{
 		insertImage(*root, imageDirFiles.paths[i]);
@@ -800,7 +801,9 @@ int main(void)
 	char EditDistanceResultText[128] = "";
 
 	int SearchResultScrollIdx = 0;
-	int SearchResultScrollActive = 0;
+	int SearchResultScrollActive = -1;
+
+	Texture2D PreviewTexture;
 
 	// Indexing thread info
 	size_t IndexingCompleted = 0;
@@ -808,6 +811,7 @@ int main(void)
 	bool IndexingDone = false;
 	bool IndexingRunning = false;
 	bool KillIndexing = false;
+	struct IndexingArguments indexingArguments;
 	pthread_t IndexingThread;
 
 	// Loading thread info
@@ -816,6 +820,7 @@ int main(void)
 	bool LoadingDone = false;
 	bool LoadingRunning = false;
 	bool KillLoading = false;
+	struct LoadingArguments loadingArguments;
 	pthread_t LoadingThread;
 
 	size_t ImagesCompleted = 0;
@@ -823,10 +828,13 @@ int main(void)
 	bool ImagesDone = false;
 	bool ImagesRunning = false;
 	bool KillImages = false;
+	struct ImageIndexArguments imageIndexArguments;
 	pthread_t ImagesThread;
 
 	Node *root = NULL;
 	ImageNode *imageRoot = NULL;
+
+	bool imageSearchResults = false;
 	//----------------------------------------------------------------------------------
 
 	SetTargetFPS(60);
@@ -908,11 +916,45 @@ int main(void)
 						}
 						result_length += snprintf(SearchResultText + result_length, CurrMaxResultSize - result_length, "%s\n", result);
 					}
+					imageSearchResults = true;
 				}
 				UnloadImage(image);
 			}
 			UnloadDroppedFiles(dropped);
 		}
+
+		if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && IsTextureValid(PreviewTexture))
+		{
+			UnloadTexture(PreviewTexture);
+			PreviewTexture.id = 0;
+		}
+
+		if (imageSearchResults && SearchResultScrollActive >= 0)
+		{
+			int n = 0;
+			char *toSplit = strdup(SearchResultText);
+			char *toFree = toSplit;
+			char *path;
+			while ((path = strsep(&toSplit, "\n")) && n < SearchResultScrollActive)
+			{
+				n++;
+			}
+			Image previewImage = LoadImage(path);
+			if (!IsImageValid(previewImage))
+			{
+				printf("Found invalid path %s\n", path);
+				UnloadImage(previewImage);
+			}
+			else
+			{
+				ImageResize(&previewImage, screenWidth / 2, screenHeight / 2);
+				PreviewTexture = LoadTextureFromImage(previewImage);
+				UnloadImage(previewImage);
+			}
+			free(toFree);
+			SearchResultScrollActive = -1;
+		}
+
 		// Draw
 		//----------------------------------------------------------------------------------
 		BeginDrawing();
@@ -936,13 +978,12 @@ int main(void)
 		{
 			// Free old index if exists
 			freeNode(root);
-			struct IndexingArguments args;
-			args.root = &root;
-			args.completed = &IndexingCompleted;
-			args.total = &IndexingTotal;
-			args.done = &IndexingDone;
-			args.kill = &KillIndexing;
-			pthread_create(&IndexingThread, NULL, &create_tree, (void *)&args);
+			indexingArguments.root = &root;
+			indexingArguments.completed = &IndexingCompleted;
+			indexingArguments.total = &IndexingTotal;
+			indexingArguments.done = &IndexingDone;
+			indexingArguments.kill = &KillIndexing;
+			pthread_create(&IndexingThread, NULL, &create_tree, (void *)&indexingArguments);
 			IndexingRunning = true;
 		}
 		if (root == NULL && GuiGetState() != STATE_DISABLED)
@@ -958,13 +999,12 @@ int main(void)
 		{
 			freeNode(root);
 			root = NULL;
-			struct LoadingArguments args;
-			args.root = &root;
-			args.completed = &LoadingCompleted;
-			args.total = &LoadingTotal;
-			args.done = &LoadingDone;
-			args.kill = &KillLoading;
-			pthread_create(&LoadingThread, NULL, &load_tree, (void *)&args);
+			loadingArguments.root = &root;
+			loadingArguments.completed = &LoadingCompleted;
+			loadingArguments.total = &LoadingTotal;
+			loadingArguments.done = &LoadingDone;
+			loadingArguments.kill = &KillLoading;
+			pthread_create(&LoadingThread, NULL, &load_tree, (void *)&loadingArguments);
 			LoadingRunning = true;
 		}
 		if (GuiTextBox((Rectangle){8, 186, 120, 24}, TextBox008Text, 128, TextBox008EditMode))
@@ -982,6 +1022,7 @@ int main(void)
 		}
 		else if (GuiButton((Rectangle){304, 186, 120, 24}, "Search"))
 		{
+			imageSearchResults = false;
 			memset(SearchResultText, 0, strlen(SearchResultText));
 			int distance = atoi(TextBox009Text);
 			if (!distance)
@@ -1033,15 +1074,20 @@ int main(void)
 		{
 			freeImageNode(imageRoot);
 			imageRoot = NULL;
-			struct ImageIndexArguments args;
-			args.root = &imageRoot;
-			args.completed = &ImagesCompleted;
-			args.total = &ImagesTotal;
-			args.done = &ImagesDone;
-			args.kill = &KillImages;
-			pthread_create(&ImagesThread, NULL, &index_images, (void *)&args);
+			imageIndexArguments = (ImageIndexArguments){.root = &imageRoot, .completed = &ImagesCompleted, .total = &ImagesTotal, .done = &ImagesDone, .kill = &KillImages};
+			// args.root = &imageRoot;
+			// args.completed = &ImagesCompleted;
+			// args.total = &ImagesTotal;
+			// args.done = &ImagesDone;
+			// args.kill = &KillImages;
+			pthread_create(&ImagesThread, NULL, &index_images, (void *)&imageIndexArguments);
 			ImagesRunning = true;
 			// index_images();
+		}
+
+		if (IsTextureValid(PreviewTexture))
+		{
+			DrawTexture(PreviewTexture, screenWidth / 2 - PreviewTexture.width / 2, screenHeight / 2 - PreviewTexture.height / 2, WHITE);
 		}
 
 		if (IndexingRunning || LoadingRunning || ImagesRunning)

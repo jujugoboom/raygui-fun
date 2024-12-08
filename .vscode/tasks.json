@@ -13,6 +13,9 @@
                     "SHELL=cmd"
                 ],
             },
+            "osx": {
+                "args": ["config=debug_arm64"]
+            },
             "group": {
                 "kind": "build",
                 "isDefault": true

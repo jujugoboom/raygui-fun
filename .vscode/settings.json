@@ -12,6 +12,16 @@
 	"files.associations": {
 		"xutility": "c",
 		"posix_thread.h": "c",
-		"algorithm": "c"
+		"algorithm": "c",
+		"__hash_table": "cpp",
+		"array": "cpp",
+		"type_traits": "cpp",
+		"limits": "cpp",
+		"ratio": "cpp",
+		"tuple": "cpp",
+		"variant": "cpp",
+		"string": "c",
+		"string_view": "c",
+		"vector": "c"
 	}
 }
