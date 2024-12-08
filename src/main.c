@@ -404,6 +404,7 @@ void *create_tree(void *args)
 		to_insert = strtok(NULL, "\n");
 	}
 	*arguments->done = true;
+	free(string);
 	pthread_exit(0);
 }
 
@@ -577,7 +578,7 @@ unsigned long long int dctTransform(Image image)
 		}
 	}
 
-	char resBuf[16];
+	UnloadImage(copy);
 	return result;
 }
 
@@ -596,12 +597,15 @@ void index_images(void)
 		Image image = LoadImage(imageDirFiles.paths[i]);
 		unsigned long long hash = dctTransform(image);
 		printf("Got hash %llx for image %s\n", hash, imageDirFiles.paths[i]);
+		UnloadImage(image);
 		Image image2 = LoadImage(imageDirFiles.paths[i]);
 		ImageBlurGaussian(&image2, 5);
 		unsigned long long hash1 = dctTransform(image2);
 		printf("Got hash %llx for image %s\n", hash1, imageDirFiles.paths[i]);
+		UnloadImage(image2);
 		printf("Hamming distance %d\n", __builtin_popcount(hash ^ hash1));
 	}
+	UnloadDirectoryFiles(imageDirFiles);
 }
 //------------------------------------------------------------------------------------
 // Program main entry point

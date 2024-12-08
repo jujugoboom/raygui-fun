@@ -403,3 +403,5 @@ Makefile
 
 # Serialized bktree
 bktree.bin
+
+.DS_Store
