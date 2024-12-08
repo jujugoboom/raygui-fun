@@ -137,6 +137,17 @@ ImageNode *createImageNode(Image image, char *path)
 	return newNode;
 }
 
+ImageNode *createImageNodeWithHash(char *path, unsigned long long int hash)
+{
+	ImageNode *newNode = malloc(sizeof(ImageNode));
+	newNode->hash = hash;
+	newNode->path = strdup(path);
+	printf("Inserting %s with hash %llx\n", newNode->path, newNode->hash);
+	ImageNode *children[HASH_SIZE] = {0};
+	memcpy(newNode->children, children, sizeof(children));
+	return newNode;
+}
+
 // Frees malloc'd data as well as all children, can be used to destruct whole tree
 void freeNode(Node *node)
 {
@@ -774,6 +785,87 @@ void *index_images(void *args)
 	*arguments->done = true;
 	pthread_exit(0);
 }
+
+void serializeImages(ImageNode *root, FILE *fp)
+{
+	if (root == NULL)
+	{
+		return;
+	}
+
+	fprintf(fp, "%s %lld :::", root->path, root->hash);
+	for (int i = 0; i < HASH_SIZE; i++)
+	{
+		if (root->children[i])
+		{
+			fprintf(fp, "%d --", i);
+			serializeImages(root->children[i], fp);
+		}
+	}
+	fprintf(fp, "%s :::", MARKER);
+}
+
+void writeImages(ImageNode *root)
+{
+	FILE *file = fopen("imagetree.bin", "wb");
+	if (file != NULL)
+	{
+		serializeImages(root, file);
+		fclose(file);
+	}
+}
+
+void deserializeImages(ImageNode **root, FILE *fp, size_t *completed, bool *kill)
+{
+	char val[128];
+	unsigned long long int hash;
+	if (!fscanf(fp, "%s %lld :::", (char *)&val, &hash) || strcmp(val, MARKER) == 0)
+		return;
+
+	// Else create node with this item and recur for children
+	*root = createImageNodeWithHash(val, hash);
+	*completed = ftell(fp);
+	int idx;
+	while (fscanf(fp, "%d --", &idx) && !*kill)
+	{
+		deserializeImages(&(*root)->children[idx], fp, completed, kill);
+	}
+	if (*kill)
+	{
+		return;
+	}
+	fscanf(fp, "%s :::", (char *)&val);
+	if (strcmp(val, MARKER) != 0)
+	{
+		exit(1);
+	}
+	// Finally return 0 for successful finish
+	return;
+}
+
+void readImages(ImageNode **root, size_t *total, size_t *completed, bool *kill)
+{
+	FILE *file = fopen("imagetree.bin", "r");
+	if (file != NULL)
+	{
+		fseek(file, 0, SEEK_END);
+		long fsize = ftell(file);
+		fseek(file, 0, SEEK_SET); /* same as rewind(f); */
+		*total = fsize;
+		deserializeImages(root, file, completed, kill);
+		fclose(file);
+		// print_tree(root);
+	}
+}
+
+void *loadImages(void *args)
+{
+	ImageIndexArguments *arguments = args;
+	readImages(arguments->root, arguments->total, arguments->completed, arguments->kill);
+	*arguments->done = true;
+	pthread_exit(0);
+}
+
 //------------------------------------------------------------------------------------
 // Program main entry point
 //------------------------------------------------------------------------------------
@@ -1070,7 +1162,7 @@ int main(void)
 		// GuiSetStyle(DEFAULT, TEXT_WRAP_MODE, TEXT_WRAP_NONE);
 		// GuiSetStyle(DEFAULT, TEXT_ALIGNMENT_VERTICAL, TEXT_ALIGN_MIDDLE);
 
-		if (GuiButton((Rectangle){450, 186, 120, 24}, "Image test"))
+		if (GuiButton((Rectangle){450, 186, 120, 24}, "Build Image Tree"))
 		{
 			freeImageNode(imageRoot);
 			imageRoot = NULL;
@@ -1083,6 +1175,29 @@ int main(void)
 			pthread_create(&ImagesThread, NULL, &index_images, (void *)&imageIndexArguments);
 			ImagesRunning = true;
 			// index_images();
+		}
+
+		if (imageRoot == NULL && GuiGetState() != STATE_DISABLED)
+		{
+			GuiDisable();
+			GuiButton((Rectangle){450, 220, 120, 24}, "Save Image Tree");
+			GuiEnable();
+		}
+		else if (GuiButton((Rectangle){450, 220, 120, 24}, "Save Image Tree"))
+			writeImages(imageRoot);
+
+		if (GuiButton((Rectangle){450, 255, 120, 24}, "Load Image tree"))
+		{
+			freeImageNode(imageRoot);
+			imageRoot = NULL;
+			imageIndexArguments = (ImageIndexArguments){.root = &imageRoot, .completed = &ImagesCompleted, .total = &ImagesTotal, .done = &ImagesDone, .kill = &KillImages};
+			// args.root = &imageRoot;
+			// args.completed = &ImagesCompleted;
+			// args.total = &ImagesTotal;
+			// args.done = &ImagesDone;
+			// args.kill = &KillImages;
+			pthread_create(&ImagesThread, NULL, &loadImages, (void *)&imageIndexArguments);
+			ImagesRunning = true;
 		}
 
 		if (IsTextureValid(PreviewTexture))
