@@ -51,6 +51,9 @@ I've changed the original file - jujugogoom 2024-12-01
 
 #define MAX_CHAR 127 // Assuming the alphabet size is at most 127
 #define MARKER ")))"
+
+// Image hashes are 64 bit unsigned ints
+#define HASH_SIZE 65
 // Node structure for the BK-Tree
 typedef struct Node
 {
@@ -58,11 +61,24 @@ typedef struct Node
 	struct Node *children[MAX_CHAR];
 } Node;
 
+typedef struct ImageNode
+{
+	unsigned long long int hash;
+	char *path;
+	struct ImageNode *children[HASH_SIZE];
+} ImageNode;
+
 typedef struct NodeStack
 {
 	struct Node *head;
 	struct NodeStack *next;
 } NodeStack;
+
+typedef struct ImageNodeStack
+{
+	struct ImageNode *head;
+	struct ImageNodeStack *next;
+} ImageNodeStack;
 
 typedef struct CharStack
 {
@@ -91,20 +107,32 @@ typedef struct LoadingArguments
 
 typedef struct ImageIndexArguments
 {
-	Node **root;
+	ImageNode **root;
 	size_t *total;
 	size_t *completed;
 	bool *done;
 	bool *kill;
 } ImageIndexArguments;
 
+unsigned long long int dctTransform(Image image);
+
 // Function to create a new node
-Node *
-createNode(char *word)
+Node *createNode(char *word)
 {
 	Node *newNode = (Node *)malloc(sizeof(Node));
 	newNode->word = strdup(word); // Allocate memory for the word
 	Node *children[MAX_CHAR] = {0};
+	memcpy(newNode->children, children, sizeof(children));
+	return newNode;
+}
+
+ImageNode *createImageNode(Image image, char *path)
+{
+	ImageNode *newNode = malloc(sizeof(ImageNode));
+	newNode->hash = dctTransform(image);
+	newNode->path = strdup(path);
+	printf("Inserting %s with hash %llx\n", newNode->path, newNode->hash);
+	ImageNode *children[HASH_SIZE] = {0};
 	memcpy(newNode->children, children, sizeof(children));
 	return newNode;
 }
@@ -120,6 +148,21 @@ void freeNode(Node *node)
 	for (int i = 0; i < MAX_CHAR; i++)
 	{
 		freeNode(node->children[i]);
+		node->children[i] = NULL;
+	}
+	free(node);
+}
+
+void freeImageNode(ImageNode *node)
+{
+	if (node == NULL)
+	{
+		return;
+	}
+	free(node->path);
+	for (int i = 0; i < HASH_SIZE; i++)
+	{
+		freeImageNode(node->children[i]);
 		node->children[i] = NULL;
 	}
 	free(node);
@@ -141,6 +184,27 @@ Node *pop_node(NodeStack **stack)
 	}
 	Node *ret = (*stack)->head;
 	NodeStack *last = *stack;
+	*stack = (*stack)->next;
+	free(last);
+	return ret;
+}
+
+ImageNodeStack *push_image_node(ImageNodeStack *stack, ImageNode *node)
+{
+	ImageNodeStack *new = malloc(sizeof(ImageNodeStack));
+	new->head = node;
+	new->next = stack;
+	return new;
+}
+
+ImageNode *pop_image_node(ImageNodeStack **stack)
+{
+	if (stack == NULL)
+	{
+		return NULL;
+	}
+	ImageNode *ret = (*stack)->head;
+	ImageNodeStack *last = *stack;
 	*stack = (*stack)->next;
 	free(last);
 	return ret;
@@ -582,30 +646,132 @@ unsigned long long int dctTransform(Image image)
 	return result;
 }
 
-void index_images(void)
+void insertImage(ImageNode *root, char *path)
 {
-	// ImageIndexArguments *arguments = args;
+	ImageNode *curr = root;
+	Image image = LoadImage(path);
+
+	if (!IsImageValid(image))
+	{
+		UnloadImage(image);
+		printf("Invalid image provided");
+		return;
+	}
+
+	ImageNode *newNode = createImageNode(image, path);
+	while (curr != NULL)
+	{
+		int distance = __builtin_popcount(curr->hash ^ newNode->hash);
+		int index = distance % HASH_SIZE;
+		ImageNode *next = curr->children[index];
+		if (next == NULL)
+		{
+			curr->children[index] = newNode;
+			break;
+		}
+		curr = next;
+	}
+	UnloadImage(image);
+}
+
+CharStack *searchImages(ImageNode *root, Image image, int radius, int max)
+{
+	if (root == NULL)
+	{
+		return NULL;
+	}
+	unsigned long long int searchHash = dctTransform(image);
+
+	ImageNodeStack *stack = push_image_node(NULL, root);
+	CharStack *potential[radius + 1];
+	for (int i = 0; i < radius + 1; i++)
+	{
+		potential[i] = NULL;
+	}
+	CharStack *results = NULL;
+	while (stack != NULL)
+	{
+		ImageNode *curr = pop_image_node(&stack);
+		int distance = __builtin_popcount(curr->hash ^ searchHash);
+		if (distance <= radius)
+		{
+			potential[distance] = push_char(potential[distance], curr->path);
+		}
+		int lower = fmax(distance - radius, 0);
+		int upper = min(distance + radius, HASH_SIZE - 1);
+		for (int i = lower; i <= upper; i++)
+		{
+			if (curr->children[i])
+			{
+				stack = push_image_node(stack, curr->children[i]);
+			}
+		}
+	}
+	int curr_dist = 0;
+	while ((results == NULL || results->len < max) && curr_dist <= radius)
+	{
+		char *res = pop_char(&potential[curr_dist]);
+		if (res == NULL)
+		{
+			curr_dist++;
+		}
+		else
+		{
+			results = push_back_char(results, res);
+		}
+	}
+	return results;
+}
+
+void *index_images(void *args)
+{
+	struct ImageIndexArguments *arguments = args;
+
+	ImageNode **root = arguments->root;
+	size_t *completed = arguments->completed;
 	if (!DirectoryExists("images"))
 	{
 		printf("No image directory\n");
-		// *arguments->done = true;
-		// pthread_exit(0);
+		*arguments->done = true;
+		pthread_exit(0);
 	}
-	FilePathList imageDirFiles = LoadDirectoryFilesEx("images", ".png", false);
-	for (int i = 0; i < imageDirFiles.count; i++)
+	FilePathList imageDirFiles = LoadDirectoryFiles("images");
+	if (imageDirFiles.count < 1)
 	{
-		Image image = LoadImage(imageDirFiles.paths[i]);
-		unsigned long long hash = dctTransform(image);
-		printf("Got hash %llx for image %s\n", hash, imageDirFiles.paths[i]);
-		UnloadImage(image);
-		Image image2 = LoadImage(imageDirFiles.paths[i]);
-		ImageBlurGaussian(&image2, 5);
-		unsigned long long hash1 = dctTransform(image2);
-		printf("Got hash %llx for image %s\n", hash1, imageDirFiles.paths[i]);
-		UnloadImage(image2);
-		printf("Hamming distance %d\n", __builtin_popcount(hash ^ hash1));
+		printf("No images found\n");
+		*arguments->done = true;
+		UnloadDirectoryFiles(imageDirFiles);
+		pthread_exit(0);
+	}
+	int i = 0;
+	Image firstImage;
+	for (i = 0; i < imageDirFiles.count; i++)
+	{
+		firstImage = LoadImage(imageDirFiles.paths[i]);
+		if (IsImageValid(firstImage))
+		{
+			*root = createImageNode(firstImage, imageDirFiles.paths[0]);
+			UnloadImage(firstImage);
+			break;
+		}
+		UnloadImage(firstImage);
+	}
+	*arguments->total = imageDirFiles.count;
+	if (root == NULL)
+	{
+		printf("No valid images found\n");
+		*arguments->done = true;
+		UnloadDirectoryFiles(imageDirFiles);
+		pthread_exit(0);
+	}
+	for (; i < imageDirFiles.count && !*arguments->kill; i++)
+	{
+		insertImage(*root, imageDirFiles.paths[i]);
+		*arguments->completed = i;
 	}
 	UnloadDirectoryFiles(imageDirFiles);
+	*arguments->done = true;
+	pthread_exit(0);
 }
 //------------------------------------------------------------------------------------
 // Program main entry point
@@ -652,7 +818,15 @@ int main(void)
 	bool KillLoading = false;
 	pthread_t LoadingThread;
 
+	size_t ImagesCompleted = 0;
+	size_t ImagesTotal = 0;
+	bool ImagesDone = false;
+	bool ImagesRunning = false;
+	bool KillImages = false;
+	pthread_t ImagesThread;
+
 	Node *root = NULL;
+	ImageNode *imageRoot = NULL;
 	//----------------------------------------------------------------------------------
 
 	SetTargetFPS(60);
@@ -666,12 +840,6 @@ int main(void)
 		//----------------------------------------------------------------------------------
 		// TODO: Implement required update logic
 		//----------------------------------------------------------------------------------
-
-		// Draw
-		//----------------------------------------------------------------------------------
-		BeginDrawing();
-
-		ClearBackground(GetColor(GuiGetStyle(DEFAULT, BACKGROUND_COLOR)));
 
 		if (IndexingDone)
 		{
@@ -692,6 +860,64 @@ int main(void)
 			LoadingRunning = false;
 			KillLoading = false;
 		}
+
+		if (ImagesDone)
+		{
+			pthread_join(ImagesThread, NULL);
+			ImagesCompleted = 0;
+			ImagesTotal = 0;
+			ImagesDone = false;
+			ImagesRunning = false;
+			KillImages = false;
+		}
+
+		if (IsFileDropped())
+		{
+			FilePathList dropped = LoadDroppedFiles();
+			if (dropped.count != 1)
+			{
+				printf("Only drop 1 image at a time\n");
+				UnloadDroppedFiles(dropped);
+			}
+			else
+			{
+				char *path = dropped.paths[0];
+				Image image = LoadImage(path);
+				if (!IsImageValid(image))
+				{
+					printf("Only .png supported for now\n");
+					UnloadDroppedFiles(dropped);
+				}
+				else
+				{
+					memset(SearchResultText, 0, strlen(SearchResultText));
+					int distance = atoi(TextBox009Text);
+					if (!distance)
+					{
+						distance = 5;
+					}
+					CharStack *search_result = searchImages(imageRoot, image, distance, INT_MAX);
+					int result_length = 0;
+					while (search_result != NULL)
+					{
+						char *result = pop_char(&search_result);
+						if (result_length + strlen(result) > CurrMaxResultSize)
+						{
+							CurrMaxResultSize *= 2;
+							SearchResultText = realloc(SearchResultText, CurrMaxResultSize);
+						}
+						result_length += snprintf(SearchResultText + result_length, CurrMaxResultSize - result_length, "%s\n", result);
+					}
+				}
+				UnloadImage(image);
+			}
+			UnloadDroppedFiles(dropped);
+		}
+		// Draw
+		//----------------------------------------------------------------------------------
+		BeginDrawing();
+
+		ClearBackground(GetColor(GuiGetStyle(DEFAULT, BACKGROUND_COLOR)));
 
 		// raygui: controls drawing
 		//----------------------------------------------------------------------------------
@@ -789,6 +1015,13 @@ int main(void)
 			GuiProgressBar((Rectangle){450, 106, 120, 24}, NULL, TextFormat("%i%%", (int)(progress * 100)), &progress, 0.0f, 1.0f);
 			GuiDisable();
 		}
+		if (ImagesRunning && ImagesTotal != 0)
+		{
+			float progress = ((float)ImagesCompleted / (float)ImagesTotal);
+			GuiEnable();
+			GuiProgressBar((Rectangle){450, 106, 120, 24}, NULL, TextFormat("%i%%", (int)(progress * 100)), &progress, 0.0f, 1.0f);
+			GuiDisable();
+		}
 		// GuiSetStyle(DEFAULT, TEXT_ALIGNMENT_VERTICAL, TEXT_ALIGN_TOP); // WARNING: Word-wrap does not work as expected in case of no-top alignment
 		// GuiSetStyle(DEFAULT, TEXT_WRAP_MODE, TEXT_WRAP_WORD);
 		GuiLabel((Rectangle){8, 220, 120, 24}, "Search Results");
@@ -798,10 +1031,20 @@ int main(void)
 
 		if (GuiButton((Rectangle){450, 186, 120, 24}, "Image test"))
 		{
-			index_images();
+			freeImageNode(imageRoot);
+			imageRoot = NULL;
+			struct ImageIndexArguments args;
+			args.root = &imageRoot;
+			args.completed = &ImagesCompleted;
+			args.total = &ImagesTotal;
+			args.done = &ImagesDone;
+			args.kill = &KillImages;
+			pthread_create(&ImagesThread, NULL, &index_images, (void *)&args);
+			ImagesRunning = true;
+			// index_images();
 		}
 
-		if (IndexingRunning || LoadingRunning)
+		if (IndexingRunning || LoadingRunning || ImagesRunning)
 			GuiDisable();
 		else
 			GuiEnable();
@@ -823,7 +1066,13 @@ int main(void)
 		KillLoading = true;
 		pthread_join(LoadingThread, NULL);
 	}
+	if (ImagesRunning)
+	{
+		KillImages = true;
+		pthread_join(ImagesThread, NULL);
+	}
 	freeNode(root);
+	freeImageNode(imageRoot);
 	free(SearchResultText);
 	CloseWindow(); // Close window and OpenGL context
 	//--------------------------------------------------------------------------------------

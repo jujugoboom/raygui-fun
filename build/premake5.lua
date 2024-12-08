@@ -69,6 +69,7 @@ function platform_defines()
     filter {"system:macosx"}
         toolset ("gcc")
         disablewarnings {"deprecated-declarations"}
+        defaultplatform ("Arm64")
 
     filter {"system:linux"}
         defines {"_GLFW_X11"}
@@ -87,7 +88,7 @@ end
 
  raylib_dir = "external/raylib-master"
 
-workspaceName = 'MyGame'
+workspaceName = 'raygui-fun'
 baseName = path.getbasename(path.getdirectory(os.getcwd()));
 
 --if (baseName ~= 'raylib-quickstart') then
