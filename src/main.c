@@ -653,6 +653,31 @@ unsigned long long int dctTransform(Image image)
 		}
 	}
 
+	unsigned int dctImageMatrix[n][m];
+	for (i = 0; i < n; i++)
+	{
+		for (j = 0; j < m; j++)
+		{
+			if (dct[i][j] > avg)
+			{
+				dctImageMatrix[i][j] = 0;
+			}
+			else
+			{
+				dctImageMatrix[i][j] = 255;
+			}
+		}
+	}
+	Image dctImage = {
+		.data = dctImageMatrix,
+		.width = n,
+		.height = m,
+		.format = PIXELFORMAT_UNCOMPRESSED_GRAYSCALE,
+		.mipmaps = 1};
+	Image allocatedDct = ImageCopy(dctImage);
+	ImageResize(&allocatedDct, 255, 255);
+	ExportImage(allocatedDct, "dct.png");
+
 	UnloadImage(copy);
 	return result;
 }
