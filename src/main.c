@@ -43,14 +43,26 @@ I've changed the original file - jujugogoom 2024-12-01
 #include <math.h>
 #include <limits.h>
 
-#if defined(_WIN32)
-#include <windows.h>
-#else
-#include <unistd.h>
-#endif
-
 #define MAX_CHAR 127 // Assuming the alphabet size is at most 127
 #define MARKER ")))"
+
+#ifndef STRSEP_H
+#define STRSEP_H
+#if defined(_WIN32) || defined(_WIN64)
+char *strsep(char **sp, char *sep)
+{
+	char *p, *s;
+	if (sp == NULL || *sp == NULL || **sp == '\0')
+		return NULL;
+	s = *sp;
+	p = s + strcspn(s, sep);
+	if (*p != '\0')
+		*p++ = '\0';
+	*sp = p;
+	return s;
+}
+#endif
+#endif
 
 // Image hashes are 64 bit unsigned ints
 #define HASH_SIZE 65
@@ -631,9 +643,9 @@ unsigned long long int dctTransform(Image image)
 	// Reduce dct to 8x8 by taking top left to get lowest frequencies
 	for (i = 0; i < 8; i++)
 	{
-		for (j = 0; j < 8; j++)
+		for (j = 1; j < 9; j++)
 		{
-			reducedDct[i][j] = dct[i][j];
+			reducedDct[i][j - 1] = dct[i][j];
 
 			if (i == 0 && j == 0)
 				continue;
@@ -641,7 +653,7 @@ unsigned long long int dctTransform(Image image)
 		}
 	}
 
-	float avg = lowFreqTotal / 63;
+	float avg = lowFreqTotal / 64;
 	unsigned long long int result = 0;
 	for (i = 0; i < 8; i++)
 	{
